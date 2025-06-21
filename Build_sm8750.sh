@@ -153,7 +153,7 @@ cd "$KERNEL_WORKSPACE" || error "无法进入kernel_workspace目录"
 
 # 初始化源码
 info "初始化repo并同步源码..."
-repo init -u https://github.com/HanKuCha/kernel_manifest.git -b refs/heads/oneplus/sm8750 -m "$REPO_MANIFEST" --depth=1 || error "repo初始化失败"
+repo init -u https://github.com/OnePlusOSS/kernel_manifest.git -b refs/heads/oneplus/sm8750 -m "$REPO_MANIFEST" --depth=1 || error "repo初始化失败"
 repo --trace sync -c -j$(nproc --all) --no-tags || error "repo同步失败"
 
 # ==================== 核心构建步骤 ====================
@@ -169,9 +169,10 @@ cd kernel_platform || error "进入kernel_platform失败"
 curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/susfs-1.5.8/kernel/setup.sh" | bash -s susfs-1.5.8 || error "SukiSU设置失败"
 
 cd KernelSU || error "进入KernelSU目录失败"
-KSU_VERSION=$(expr $(/usr/bin/git rev-list --count main) "+" 10606)
+KSU_VERSION=$(expr $(/usr/bin/git rev-list --count main) "+" 10700)
 export KSU_VERSION=$KSU_VERSION
 sed -i "s/DKSU_VERSION=12800/DKSU_VERSION=${KSU_VERSION}/" kernel/Makefile || error "修改KernelSU版本失败"
+info "$KSU_VERSION"
 
 # 设置susfs
 info "设置susfs..."
@@ -185,7 +186,7 @@ cp ../susfs4ksu/kernel_patches/50_add_susfs_in_gki-android15-6.6.patch ./common/
 cp ../susfs4ksu/kernel_patches/fs/* ./common/fs/
 cp ../susfs4ksu/kernel_patches/include/linux/* ./common/include/linux/
 
-if [ "${{ github.event.inputs.enable_feature_y }}" = "true"]; then
+if [ "$ENABLE_LZ4KD" = "true"]; then
   cp ../kernel_patches/001-lz4.patch ./common/
   cp ../kernel_patches/lz4armv8.S ./common/lib
   cp ../kernel_patches/002-zstd.patch ./common/
@@ -209,7 +210,7 @@ fi
 patch -p1 < 50_add_susfs_in_gki-android15-6.6.patch || info "SUSFS补丁应用可能有警告"
 cp "$KERNEL_WORKSPACE/SukiSU_patch/hooks/syscall_hooks.patch" ./ || error "复制syscall_hooks.patch失败"
 patch -p1 -F 3 < syscall_hooks.patch || info "syscall_hooks补丁应用可能有警告"
-if [ "${{ github.event.inputs.enable_feature_y }}" = "true" ]; then
+if [ "ENABLE_LZ4KD" = "true" ]; then
   git apply -p1 < 001-lz4.patch || true
   patch -p1 < 002-zstd.patch || true
 fi
@@ -248,10 +249,9 @@ apply_hmbird_patch
 
 # 返回common目录
 cd .. || error "返回common目录失败"
-
+cd arch/arm64/configs || error "进入configs目录失败"
 # 添加SUSFS配置
 info "添加SUSFS配置..."
-cd arch/arm64/configs || error "进入configs目录失败"
 echo -e "CONFIG_KSU=y
 CONFIG_KSU_SUSFS_SUS_SU=n
 CONFIG_KSU_MANUAL_HOOK=y
@@ -262,7 +262,6 @@ CONFIG_KSU_SUSFS_SUS_MOUNT=y
 CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT=y
 CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT=y
 CONFIG_KSU_SUSFS_SUS_KSTAT=y
-CONFIG_KSU_SUSFS_SUS_OVERLAYFS=n
 CONFIG_KSU_SUSFS_TRY_UMOUNT=y
 CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT=y
 CONFIG_KSU_SUSFS_SPOOF_UNAME=y
@@ -365,6 +364,64 @@ cp "$WORKSPACE/AnyKernel3/AnyKernel3_${KSU_VERSION}_${DEVICE_NAME}_SuKiSu.zip" "
 info "内核包路径: C:/Kernel_Build/${DEVICE_NAME}/AnyKernel3_${KSU_VERSION}_${DEVICE_NAME}_SuKiSu.zip"
 info "Image路径: C:/Kernel_Build/${DEVICE_NAME}/Image"
 info "请在C盘目录中查找内核包和Image文件。"
-info "清理本次构建的所有文件..."
-sudo rm -rf "$WORKSPACE" || error "无法删除工作目录，可能未创建"
-info "清理完成！下次运行脚本将重新拉取源码并构建内核。"
+
+# ==================== 补丁管理函数 ====================
+clean_patches() {
+    info "清理所有补丁文件和修改..."
+    
+    # 1. 定义所有补丁目录的绝对路径
+    local patch_dirs=(
+        "$KERNEL_WORKSPACE/susfs4ksu"
+        "$KERNEL_WORKSPACE/kernel_patches"
+        "$KERNEL_WORKSPACE/SukiSU_patch"
+        "$KERNEL_WORKSPACE/kernel_platform/sched_ext"
+        "$KERNEL_WORKSPACE/kernel_platform/KernelSU"
+        "$WORKSPACE/AnyKernel3"
+    )
+    
+    # 2. 删除所有补丁目录
+    for dir in "${patch_dirs[@]}"; do
+        if [ -d "$dir" ]; then
+            info "删除补丁目录: $(basename "$dir")"
+            rm -rf "$dir"
+        fi
+    done
+    rm -rf $KERNEL_WORKSPACE/kernel_platform/common/out/arch/arm64/boot/Image
+    rm -rf $KERNEL_WORKSPACE/kernel_platform/common/out/arch/arm64/boot/patch_linux
+    rm -rf $KERNEL_WORKSPACE/kernel_platform/common/fs/sus_su.c
+    rm -rf $KERNEL_WORKSPACE/kernel_platform/common/50_add_susfs_in_gki-android15-6.6.patch
+    rm -rf $KERNEL_WORKSPACE/kernel_platform/common/susfs.c
+
+
+    
+    # 3. 恢复被修改的源码文件（通过Git）
+    info "恢复源码修改..."
+    cd "$KERNEL_WORKSPACE" || error "进入源码目录失败"
+    
+    # 使用repo遍历所有git仓库
+    repo forall -c '
+        echo "处理仓库: $REPO_PROJECT"
+        
+        # 检查是否有未提交的修改
+        if git diff --quiet; then
+            echo "  无修改，跳过"
+        else
+            echo "  重置修改..."
+            git reset --hard HEAD
+            git clean -fd
+        fi
+        
+        # 删除所有.orig文件（补丁备份）
+        find . -name "*.orig" -delete
+    '
+    
+    # 4. 删除构建产物但保留源码
+    info "清理构建产物..."
+    find "$KERNEL_WORKSPACE" -name "*.o" -delete
+    find "$KERNEL_WORKSPACE" -name "*.ko" -delete
+    find "$KERNEL_WORKSPACE" -name "*.cmd" -delete
+    rm -rf "$KERNEL_WORKSPACE/out" "$KERNEL_WORKSPACE/.tmp_versions"
+}
+
+# ==================== 在编译完成后调用 ====================
+clean_patches

@@ -344,7 +344,7 @@ mv oImage Image || error "替换Image失败"
 # 创建AnyKernel3包
 info "创建AnyKernel3包..."
 cd "$WORKSPACE" || error "返回工作目录失败"
-git clone -q https://github.com/Kernel-SU/AnyKernel3.git --depth=1 || info "AnyKernel3已存在"
+git clone -q https://github.com/showdo/AnyKernel3.git --depth=1 || info "AnyKernel3已存在"
 rm -rf ./AnyKernel3/.git
 rm -f ./AnyKernel3/push.sh
 cp "$KERNEL_WORKSPACE/kernel_platform/common/out/arch/arm64/boot/Image" ./AnyKernel3/ || error "复制Image失败"
@@ -361,67 +361,7 @@ mkdir -p "$WIN_OUTPUT_DIR" || error "无法创建Windows目录，可能未挂载
 cp "$KERNEL_WORKSPACE/kernel_platform/common/out/arch/arm64/boot/Image" "$WIN_OUTPUT_DIR/"
 cp "$WORKSPACE/AnyKernel3/AnyKernel3_${KSU_VERSION}_${DEVICE_NAME}_SuKiSu.zip" "$WIN_OUTPUT_DIR/"
 
+rm -rf $WORKSPACE
 info "内核包路径: C:/Kernel_Build/${DEVICE_NAME}/AnyKernel3_${KSU_VERSION}_${DEVICE_NAME}_SuKiSu.zip"
 info "Image路径: C:/Kernel_Build/${DEVICE_NAME}/Image"
 info "请在C盘目录中查找内核包和Image文件。"
-
-# ==================== 补丁管理函数 ====================
-clean_patches() {
-    info "清理所有补丁文件和修改..."
-    
-    # 1. 定义所有补丁目录的绝对路径
-    local patch_dirs=(
-        "$KERNEL_WORKSPACE/susfs4ksu"
-        "$KERNEL_WORKSPACE/kernel_patches"
-        "$KERNEL_WORKSPACE/SukiSU_patch"
-        "$KERNEL_WORKSPACE/kernel_platform/sched_ext"
-        "$KERNEL_WORKSPACE/kernel_platform/KernelSU"
-        "$WORKSPACE/AnyKernel3"
-    )
-    
-    # 2. 删除所有补丁目录
-    for dir in "${patch_dirs[@]}"; do
-        if [ -d "$dir" ]; then
-            info "删除补丁目录: $(basename "$dir")"
-            rm -rf "$dir"
-        fi
-    done
-    rm -rf $KERNEL_WORKSPACE/kernel_platform/common/out/arch/arm64/boot/Image
-    rm -rf $KERNEL_WORKSPACE/kernel_platform/common/out/arch/arm64/boot/patch_linux
-    rm -rf $KERNEL_WORKSPACE/kernel_platform/common/fs/sus_su.c
-    rm -rf $KERNEL_WORKSPACE/kernel_platform/common/50_add_susfs_in_gki-android15-6.6.patch
-    rm -rf $KERNEL_WORKSPACE/kernel_platform/common/susfs.c
-
-
-    
-    # 3. 恢复被修改的源码文件（通过Git）
-    info "恢复源码修改..."
-    cd "$KERNEL_WORKSPACE" || error "进入源码目录失败"
-    
-    # 使用repo遍历所有git仓库
-    repo forall -c '
-        echo "处理仓库: $REPO_PROJECT"
-        
-        # 检查是否有未提交的修改
-        if git diff --quiet; then
-            echo "  无修改，跳过"
-        else
-            echo "  重置修改..."
-            git reset --hard HEAD
-            git clean -fd
-        fi
-        
-        # 删除所有.orig文件（补丁备份）
-        find . -name "*.orig" -delete
-    '
-    
-    # 4. 删除构建产物但保留源码
-    info "清理构建产物..."
-    find "$KERNEL_WORKSPACE" -name "*.o" -delete
-    find "$KERNEL_WORKSPACE" -name "*.ko" -delete
-    find "$KERNEL_WORKSPACE" -name "*.cmd" -delete
-    rm -rf "$KERNEL_WORKSPACE/out" "$KERNEL_WORKSPACE/.tmp_versions"
-}
-
-# ==================== 在编译完成后调用 ====================
-clean_patches

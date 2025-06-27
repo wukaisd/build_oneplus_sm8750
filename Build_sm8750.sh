@@ -15,7 +15,6 @@ error() {
 }
 
 # 参数设置
-KERNEL_SUFFIX="-android15-8-g013ec21bba94-abogki383916444-4k"
 ENABLE_KPM=true
 ENABLE_LZ4KD=true
 
@@ -31,22 +30,26 @@ case $device_choice in
     1)
         DEVICE_NAME="oneplus_ace5_pro"
         REPO_MANIFEST="JiuGeFaCai_oneplus_ace5_pro_v.xml"
-        KERNEL_TIME="Wed Dec 4 02:11:46 UTC 2024"
+        KERNEL_TIME="Tue Dec 17 23:36:49 UTC 2024"
+        KERNEL_SUFFIX="-android15-8-g013ec21bba94-abogki383916444-4k"
         ;;
     2)
         DEVICE_NAME="oneplus_13"
         REPO_MANIFEST="JiuGeFaCai_oneplus_13_v.xml"
         KERNEL_TIME="Tue Dec 17 23:36:49 UTC 2024"
+        KERNEL_SUFFIX="-android15-8-g013ec21bba94-abogki383916444-4k"
         ;;
     3)
         DEVICE_NAME="oneplus_13t"
         REPO_MANIFEST="oneplus_13t.xml"
-        KERNEL_TIME="Tue Dec 17 23:36:49 UTC 2024"
+        KERNEL_TIME="FriApr 25 01:56:53 UTC 2025"
+        KERNEL_SUFFIX="-android15-8-gba3bcfd39307-abogki413159095-4k"
         ;;
     4)
         DEVICE_NAME="oneplus_pad_2_pro"
         REPO_MANIFEST="oneplus_pad_2_pro.xml"
-        KERNEL_TIME="Tue Dec 17 23:36:49 UTC 2024"
+        KERNEL_TIME="Wed Dec 11 19:16:38 UTC 2024"
+        KERNEL_SUFFIX="-android15-8-g0261dbe3cf7e-ab12786384-4k"   
         ;;
     *)
         error "无效的选择，请输入1-3之间的数字"
@@ -62,10 +65,10 @@ read -p "输入内核构建日期更改(回车默认为原厂) : " input_time
 [ -n "$input_time" ] && KERNEL_TIME="$input_time"
 
 read -p "是否启用kpm?(回车默认开启) [y/N]: " kpm
-[[ "$kpm" =~ [yY] ]] && ENABLE_KPM=true
+[[ "$kpm" =~ [nN] ]] && ENABLE_KPM=false
 
 read -p "是否启用lz4+zstd?(回车默认开启) [y/N]: " lz4
-[[ "$lz4" =~ [yY] ]] && ENABLE_LZ4KD=true
+[[ "$lz4" =~ [nN] ]] && ENABLE_LZ4KD=false
 
 # 环境变量 - 按机型区分ccache目录
 export CCACHE_COMPILERCHECK="%compiler% -dumpmachine; %compiler% -dumpversion"
@@ -163,7 +166,7 @@ rm -f kernel_platform/msm-kernel/android/abi_gki_protected_exports_*
 # 设置SukiSU
 info "设置SukiSU..."
 cd kernel_platform || error "进入kernel_platform失败"
-curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s susfs-main
+curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/susfs-main/kernel/setup.sh" | bash -s susfs-main
 cd KernelSU || error "进入KernelSU目录失败"
 KSU_VERSION=$(expr $(/usr/bin/git rev-list --count main) "+" 10700)
 export KSU_VERSION=$KSU_VERSION
@@ -174,19 +177,11 @@ info "$KSU_VERSION"
 info "设置susfs..."
 cd "$KERNEL_WORKSPACE" || error "返回工作目录失败"
 git clone -q https://gitlab.com/simonpunk/susfs4ksu.git -b gki-android15-6.6 || info "susfs4ksu已存在或克隆失败"
-git clone https://github.com/Xiaomichael/kernel_patches.git
 git clone -q https://github.com/SukiSU-Ultra/SukiSU_patch.git || info "SukiSU_patch已存在或克隆失败"
-
 cd kernel_platform || error "进入kernel_platform失败"
 cp ../susfs4ksu/kernel_patches/50_add_susfs_in_gki-android15-6.6.patch ./common/
 cp ../susfs4ksu/kernel_patches/fs/* ./common/fs/
 cp ../susfs4ksu/kernel_patches/include/linux/* ./common/include/linux/
-
-if [ "$ENABLE_LZ4KD" = "true"]; then
-  cp ../kernel_patches/001-lz4.patch ./common/
-  cp ../kernel_patches/lz4armv8.S ./common/lib
-  cp ../kernel_patches/002-zstd.patch ./common/
-fi
 
 cd $KERNEL_WORKSPACE/kernel_platform/common || { echo "进入common目录失败"; exit 1; }
 
@@ -206,10 +201,6 @@ fi
 patch -p1 < 50_add_susfs_in_gki-android15-6.6.patch || info "SUSFS补丁应用可能有警告"
 cp "$KERNEL_WORKSPACE/SukiSU_patch/hooks/syscall_hooks.patch" ./ || error "复制syscall_hooks.patch失败"
 patch -p1 -F 3 < syscall_hooks.patch || info "syscall_hooks补丁应用可能有警告"
-if [ "ENABLE_LZ4KD" = "true" ]; then
-  git apply -p1 < 001-lz4.patch || true
-  patch -p1 < 002-zstd.patch || true
-fi
 
 # 应用HMBird GKI补丁
 apply_hmbird_patch() {
@@ -242,7 +233,20 @@ apply_hmbird_patch() {
 
 # 主流程
 apply_hmbird_patch
-
+if [ "$ENABLE_LZ4KD" = "true"]; then
+  cd kernel_workspace/kernel_platform/common
+  info "更新LZ4实现"
+  curl -sSLO https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/plain/lib/lz4/lz4_decompress.c
+  curl -sSLO https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/plain/lib/lz4/lz4defs.h
+  curl -sSLO https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/plain/lib/lz4/lz4_compress.c
+  curl -sSLO https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/plain/lib/lz4/lz4hc_compress.c
+  
+  info "更新Zstd实现"
+  mkdir -p lib/zstd && cd lib/zstd
+  curl -sSL https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/plain/lib/zstd/zstd_common_module.c -o common.c
+  cd ../../..
+  info "✅ LZ4/Zstd 算法更新完成"
+fi
 # 返回common目录
 cd .. || error "返回common目录失败"
 cd arch/arm64/configs || error "进入configs目录失败"
@@ -253,7 +257,7 @@ CONFIG_KSU_SUSFS_SUS_SU=n
 CONFIG_KSU_MANUAL_HOOK=y
 CONFIG_KSU_SUSFS=y
 CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT=y
-CONFIG_KSU_SUSFS_SUS_PATH=n
+CONFIG_KSU_SUSFS_SUS_PATH=y
 CONFIG_KSU_SUSFS_SUS_MOUNT=y
 CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT=y
 CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT=y
@@ -265,11 +269,18 @@ CONFIG_KSU_SUSFS_ENABLE_LOG=y
 CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y
 CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y
 CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
+# 启用高级压缩支持
 CONFIG_CRYPTO_LZ4HC=y
 CONFIG_CRYPTO_LZ4=y
-CONFIG_CRYPTO_LZ4K=y
-CONFIG_CRYPTO_842=y
-# BBR
+CONFIG_CRYPTO_ZSTD=y
+# 文件系统级压缩支持
+CONFIG_F2FS_FS_COMPRESSION=y
+CONFIG_F2FS_FS_LZ4=y
+CONFIG_F2FS_FS_LZ4HC=y
+CONFIG_F2FS_FS_ZSTD=y
+# 内核镜像压缩配置
+CONFIG_KERNEL_LZ4=y
+# BBR(TCP拥塞控制算法)
 CONFIG_TCP_CONG_ADVANCED=y
 CONFIG_TCP_CONG_BBR=y
 CONFIG_NET_SCH_FQ=y
@@ -315,20 +326,19 @@ export PATH="/usr/lib/ccache:$PATH"
 
 cd $KERNEL_WORKSPACE/kernel_platform/common || error "进入common目录失败"
 
-# 生成.config
 make -j$(nproc --all) LLVM=1 ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CC=clang \
   RUSTC=../../prebuilts/rust/linux-x86/1.73.0b/bin/rustc \
   PAHOLE=../../prebuilts/kernel-build-tools/linux-x86/bin/pahole \
   LD=ld.lld HOSTLD=ld.lld O=out KCFLAGS+=-O2 gki_defconfig || error "生成配置失败"
 
-# 编译 Image（内核镜像）
+
 make -j$(nproc --all) LLVM=1 ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CC=clang \
   RUSTC=../../prebuilts/rust/linux-x86/1.73.0b/bin/rustc \
   PAHOLE=../../prebuilts/kernel-build-tools/linux-x86/bin/pahole \
   LD=ld.lld HOSTLD=ld.lld O=out KCFLAGS+=-O2 Image || error "内核构建失败"
 
 
-# 应用Linux补丁
+
 info "应用Linux补丁..."
 cd out/arch/arm64/boot || error "进入boot目录失败"
 curl -LO https://github.com/SukiSU-Ultra/SukiSU_KernelPatch_patch/releases/download/0.12.0/patch_linux || error "下载patch_linux失败"
@@ -349,7 +359,7 @@ cp "$KERNEL_WORKSPACE/kernel_platform/common/out/arch/arm64/boot/Image" ./AnyKer
 cd AnyKernel3 || error "进入AnyKernel3目录失败"
 zip -r "AnyKernel3_${KSU_VERSION}_${DEVICE_NAME}_SuKiSu.zip" ./* || error "打包失败"
 
-# 创建C盘输出目录（通过WSL访问Windows的C盘）
+# 创建C盘输出目录
 WIN_OUTPUT_DIR="/mnt/c/Kernel_Build/${DEVICE_NAME}/"
 mkdir -p "$WIN_OUTPUT_DIR" || error "无法创建Windows目录，可能未挂载C盘，将保存到Linux目录:$WORKSPACE/AnyKernel3/AnyKernel3_${KSU_VERSION}_${DEVICE_NAME}_SuKiSu.zip"
 

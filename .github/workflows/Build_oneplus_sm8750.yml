@@ -12,21 +12,23 @@ on:
           - 'oneplus_13t'
           - 'oneplus_pad_2_pro'
           - 'oneplus_ace5_ultra'
+          - 'realme_GT7pro'
+          - 'realme_GT7pro_Speed'
         default: 'oneplus_ace5_pro'
 
       keep_original_settings:
-        description: "✅ 保持原内核名称及构建时间"
+        description: "保持原内核名称及构建时间"
         required: false
         default: true
         type: boolean
 
       custom_kernel_suffix:
-        description: "✏️ 自定义内核名称(可中文和emoji) - 仅在取消勾选'保持原设置'时有效"
+        description: "✏️ 自定义内核名称(示例:-TG@qdykernel) - 仅在取消勾选'保持原设置'时有效"
         required: false
         default: ''
       
       custom_kernel_time:
-        description: "⏰ 自定义构建时间(示例：Tue Dec 17 23:36:49 UTC 2024) - 仅在取消勾选'保持原设置'时有效"
+        description: "⏰ 自定义构建时间(示例:Tue Dec 17 23:36:49 UTC 2024) - 仅在取消勾选'保持原设置'时有效"
         required: false
         default: ''
       
@@ -37,7 +39,7 @@ on:
         type: boolean
         
       enable_feature_y:
-        description: "启用lz4+zstd"
+        description: "启用lz4kd"
         required: false
         default: true
         type: boolean
@@ -53,6 +55,7 @@ on:
 
 jobs:
   build:
+    name: Build_${{ github.event.inputs.REPO_MANIFEST }}
     runs-on: ubuntu-latest
     steps:
       - name: 📊 Check disk space (检查磁盘空间)
@@ -86,7 +89,7 @@ jobs:
             echo "KERNEL_TIME=$CUSTOM_TIME" >> $GITHUB_ENV
           else
             case "$DEVICES_NAME" in
-              oneplus_13 | oneplus_ace5_pro)
+              oneplus_13 | oneplus_ace5_pro | realme_GT7pro | realme_GT7pro_Speed)
                 echo 'KERNEL_TIME=Tue Dec 17 23:36:49 UTC 2024' >> $GITHUB_ENV
                 ;;
               oneplus_13t)
@@ -125,7 +128,7 @@ jobs:
         uses: actions/cache@v3
         with:
           path: ${{ env.HOME }}/apt-cache
-          key: ${{ runner.os }}-apt-${{ hashFiles('.github/workflows/Build_oneplus_sm8750.yaml') }}
+          key: ${{ runner.os }}-apt-${{ hashFiles('.github/workflows/Build_oneplus_sm8750.yml') }}
           restore-keys: |
             ${{ runner.os }}-apt-
 
@@ -211,6 +214,11 @@ jobs:
            cp ../susfs4ksu/kernel_patches/fs/* ./common/fs/
            cp ../susfs4ksu/kernel_patches/include/linux/* ./common/include/linux/
 
+           cp -r ../SukiSU_patch/other/zram/lz4k/include/linux/* ./common/include/linux
+           cp -r ../SukiSU_patch/other/zram/lz4k/lib/* ./common/lib
+           cp -r ../SukiSU_patch/other/zram/lz4k/crypto/* ./common/crypto
+           cp -r ../SukiSU_patch/other/zram/lz4k_oplus ./common/lib/
+
            # Apply patches
            cd ./common
 
@@ -252,28 +260,13 @@ jobs:
           echo "HMBird补丁应用完成"
 
           
-      - name: 🔧 Update compression algorithms (更新压缩算法)
-        if: ${{ inputs.enable_feature_y }}
+      - name: Apply lz4kd Patches
+        if: ${{inputs.enable_feature_y }}
         run: |
           cd kernel_workspace/kernel_platform/common
-          
-          # 更新LZ4实现
-          curl -sSLO https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/plain/lib/lz4/lz4_decompress.c
-          curl -sSLO https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/plain/lib/lz4/lz4defs.h
-          curl -sSLO https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/plain/lib/lz4/lz4_compress.c
-          curl -sSLO https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/plain/lib/lz4/lz4hc_compress.c
-          
-          # 更新Zstd实现
-          zstd_base="https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/plain/lib/zstd"
-          mkdir -p lib/zstd && cd lib/zstd
-          curl -sSL $zstd_base/zstd_common_module.c -o common.c
-          curl -sSL $zstd_base/compress/zstd_compress_module.c -o compress.c
-          curl -sSL $zstd_base/decompress/zstd_decompress_module.c -o decompress.c
-          curl -sSL $zstd_base/zstd_compat.h -o compat.h
-          
-          cd ../../..
-          echo "✅ LZ4/Zstd 算法更新完成"
-
+            cp ../../SukiSU_patch/other/zram/zram_patch/6.6/lz4kd.patch ./
+            patch -p1 -F 3 < lz4kd.patch || true
+            
       - name: 🔧 Set gki_defconfig (设置编译配置)
         run: |
           cd kernel_workspace/kernel_platform
@@ -338,7 +331,7 @@ jobs:
           cd kernel_workspace/kernel_platform
 
           case "$DEVICES_NAME" in
-            oneplus_13 | oneplus_ace5_pro)
+            oneplus_13 | oneplus_ace5_pro | realme_GT7pro | realme_GT7pro_Speed)
               DEFAULT_SUFFIX="-android15-8-g013ec21bba94-abogki383916444-4k"
               ;;
             oneplus_13t)
